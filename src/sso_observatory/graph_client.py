@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Dict, Iterator, Optional
 
 import requests
@@ -15,8 +16,10 @@ LOGGER = logging.getLogger(__name__)
 class GraphClient:
     """Provide authenticated access to Microsoft Graph."""
 
-    def __init__(self, config: AzureConfig) -> None:
+    def __init__(self, config: AzureConfig, *, max_retries: int = 5, timeout: int = 30) -> None:
         self.config = config
+        self.max_retries = max(1, max_retries)
+        self.timeout = timeout
         self._app = ConfidentialClientApplication(
             client_id=config.client_id,
             client_credential=config.client_secret,
@@ -48,11 +51,33 @@ class GraphClient:
         }
         if headers:
             merged_headers.update(headers)
-        response = requests.get(url, params=params, headers=merged_headers, timeout=30)
-        if response.status_code >= 400:
+
+        attempt = 0
+        while True:
+            attempt += 1
+            response = requests.get(url, params=params, headers=merged_headers, timeout=self.timeout)
+            if response.status_code < 400:
+                return response.json()
+
+            will_retry = response.status_code in {429, 503} and attempt < self.max_retries
+            if will_retry:
+                retry_after = response.headers.get("Retry-After")
+                try:
+                    wait_seconds = int(retry_after) if retry_after else 5
+                except ValueError:
+                    wait_seconds = 5
+                LOGGER.warning(
+                    "Graph throttled (status %s). Retrying in %ss (attempt %s/%s)",
+                    response.status_code,
+                    wait_seconds,
+                    attempt + 1,
+                    self.max_retries,
+                )
+                time.sleep(wait_seconds)
+                continue
+
             LOGGER.error("Graph request failed: %s", response.text)
             response.raise_for_status()
-        return response.json()
 
     def paginate(
         self,
@@ -73,5 +98,3 @@ class GraphClient:
                 yield item
             next_link = payload.get("@odata.nextLink")
             first_request = False
-
-```}

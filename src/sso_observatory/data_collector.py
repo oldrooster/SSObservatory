@@ -33,9 +33,28 @@ class EnterpriseAppCollector:
         self.database = database
 
     def run(self) -> None:
+        LOGGER.info("Fetching enterprise apps from Microsoft Graph")
+        service_principals = list(self._iter_service_principals())
+        raw_total = len(service_principals)
+        LOGGER.info("Discovered %s enterprise apps before local filtering", raw_total)
+        if not service_principals:
+            LOGGER.warning("No enterprise apps returned from Graph")
+            return
+
+        service_principals = self._apply_local_filters(service_principals)
+        filtered_total = len(service_principals)
+        LOGGER.info("Retained %s enterprise apps after local filtering", filtered_total)
+        if not service_principals:
+            LOGGER.warning("All enterprise apps were filtered out locally; nothing to process")
+            return
+
         batch: List[EnterpriseAppRecord] = []
         ingested = 0
-        for record in self._build_records():
+        sampled_until = datetime.now(timezone.utc)
+        total = len(service_principals)
+        for idx, sp in enumerate(service_principals, start=1):
+            record = self._record_from_service_principal(sp, sampled_until)
+            LOGGER.info("Processed %s (%s/%s)", record.display_name, idx, total)
             batch.append(record)
             if len(batch) >= 100:
                 self.database.upsert_apps(batch)
@@ -46,19 +65,29 @@ class EnterpriseAppCollector:
             ingested += len(batch)
         LOGGER.info("Upserted %s enterprise app rows", ingested)
 
-    def _build_records(self) -> Iterator[EnterpriseAppRecord]:
-        sampled_until = datetime.now(timezone.utc)
-        for sp in self._iter_service_principals():
-            record = self._record_from_service_principal(sp, sampled_until)
-            yield record
-
     def _iter_service_principals(self) -> Iterator[Dict]:
         params = {
-            "$select": "id,appId,displayName,accountEnabled,keyCredentials",
-            "$filter": "servicePrincipalType eq 'Application'",
+            "$filter": self.config.service_principal_filter,
             "$top": str(self.config.fetch_page_size),
         }
-        yield from self.graph_client.paginate("/servicePrincipals", params=params)
+        headers = {"ConsistencyLevel": "eventual"}
+        yield from self.graph_client.paginate("/servicePrincipals", params=params, headers=headers)
+
+    def _apply_local_filters(self, service_principals: List[Dict]) -> List[Dict]:
+        owner_blocklist = {oid.lower() for oid in self.config.local_exclude_owner_ids}
+        publisher_blocklist = {pub.lower() for pub in self.config.local_exclude_publishers}
+        filtered: List[Dict] = []
+        for sp in service_principals:
+            if self.config.exclude_hidden_apps and _has_hide_tag(sp):
+                continue
+            owner = str(sp.get("appOwnerOrganizationId", "")).lower()
+            if owner and owner in owner_blocklist:
+                continue
+            publisher = str(sp.get("publisherName", "")).lower()
+            if publisher and publisher in publisher_blocklist:
+                continue
+            filtered.append(sp)
+        return filtered
 
     def _record_from_service_principal(
         self,
@@ -88,19 +117,12 @@ class EnterpriseAppCollector:
         start_iso = start_time.isoformat().replace("+00:00", "Z")
         params = {
             "$filter": f"appId eq '{app_id}' and createdDateTime ge {start_iso}",
-            "$count": "true",
             "$top": str(self.config.fetch_page_size),
         }
         headers = {"ConsistencyLevel": "eventual"}
-        payload = self.graph_client.get("/auditLogs/signIns", params=params, headers=headers)
-        if "@odata.count" in payload:
-            return int(payload.get("@odata.count", 0))
-        total = len(payload.get("value", []))
-        next_link = payload.get("@odata.nextLink")
-        while next_link:
-            page = self.graph_client.get(next_link, headers=headers, absolute=True)
-            total += len(page.get("value", []))
-            next_link = page.get("@odata.nextLink")
+        total = 0
+        for _ in self.graph_client.paginate("/auditLogs/signIns", params=params, headers=headers):
+            total += 1
         return total
 
 
@@ -132,4 +154,9 @@ def parse_datetime(value: Optional[str]) -> Optional[datetime]:
         LOGGER.warning("Unable to parse datetime: %s", value)
         return None
 
-```}
+
+def _has_hide_tag(sp: Dict) -> bool:
+    tags = sp.get("tags", [])
+    if not isinstance(tags, list):
+        return False
+    return any(isinstance(tag, str) and tag.lower() == "hideapp" for tag in tags)

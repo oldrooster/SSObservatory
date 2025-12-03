@@ -27,6 +27,10 @@ cp .env.example .env
 | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGSSLMODE` | PostgreSQL connection details. |
 | `LOOKBACK_DAYS` | Window (default 30) for measuring user sign-ins. |
 | `GRAPH_PAGE_SIZE` | Page size used when iterating Graph results (1-999). |
+| `SERVICE_PRINCIPAL_FILTER` | Microsoft Graph `$filter` expression for selecting enterprise apps (defaults to `servicePrincipalType eq 'Application'`). |
+| `EXCLUDE_HIDE_APP_TAG` | `true`/`false`. When true (default) the app drops service principals whose tags include `HideApp`. |
+| `EXCLUDE_OWNER_ORGANIZATION_IDS` | Comma-separated list of tenant IDs to ignore (default contains Microsoft's first-party tenant). |
+| `EXCLUDE_PUBLISHERS` | Comma-separated list of publisher names to skip locally (default `Microsoft`). |
 
 ## Running Locally
 ```
