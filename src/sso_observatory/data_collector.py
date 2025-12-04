@@ -22,6 +22,18 @@ class EnterpriseAppRecord:
     has_valid_certificate: bool
     nearest_cert_expiry: Optional[datetime]
     sampled_until: datetime
+    app_description: Optional[str]
+    app_owner_organization_id: Optional[str]
+    app_role_assignment_required: Optional[bool]
+    created_datetime: Optional[datetime]
+    description: Optional[str]
+    homepage: Optional[str]
+    login_url: Optional[str]
+    notes: Optional[str]
+    notification_emails: Optional[List[str]]
+    saml_sso_settings: Optional[Dict]
+    preferred_single_sign_on_mode: Optional[str]
+    tags: Optional[List[str]]
 
 
 class EnterpriseAppCollector:
@@ -99,6 +111,7 @@ class EnterpriseAppCollector:
             raise ValueError("Service principal payload missing id")
         signin_count = self._fetch_signin_count(sp.get("appId"))
         has_valid_cert, nearest_expiry = analyze_certificates(sp.get("keyCredentials", []))
+        created_dt = parse_datetime(sp.get("createdDateTime"))
         return EnterpriseAppRecord(
             app_object_id=app_object_id,
             app_id=sp.get("appId"),
@@ -108,6 +121,18 @@ class EnterpriseAppCollector:
             has_valid_certificate=has_valid_cert,
             nearest_cert_expiry=nearest_expiry,
             sampled_until=sampled_until,
+            app_description=sp.get("appDescription"),
+            app_owner_organization_id=sp.get("appOwnerOrganizationId"),
+            app_role_assignment_required=sp.get("appRoleAssignmentRequired"),
+            created_datetime=created_dt,
+            description=sp.get("description"),
+            homepage=sp.get("homepage"),
+            login_url=sp.get("loginUrl"),
+            notes=sp.get("notes"),
+            notification_emails=sp.get("notificationEmailAddresses"),
+            saml_sso_settings=sp.get("samlSingleSignOnSettings"),
+            preferred_single_sign_on_mode=sp.get("preferredSingleSignOnMode"),
+            tags=sp.get("tags"),
         )
 
     def _fetch_signin_count(self, app_id: Optional[str]) -> int:

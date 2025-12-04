@@ -59,6 +59,18 @@ CREATE TABLE enterprise_apps (
 	has_valid_certificate BOOLEAN,
 	nearest_cert_expiry TIMESTAMPTZ,
 	sampled_until TIMESTAMPTZ NOT NULL,
+	app_description TEXT,
+	app_owner_organization_id TEXT,
+	app_role_assignment_required BOOLEAN,
+	created_datetime TIMESTAMPTZ,
+	description TEXT,
+	homepage TEXT,
+	login_url TEXT,
+	notes TEXT,
+	notification_emails JSONB,
+	saml_sso_settings JSONB,
+	preferred_single_sign_on_mode TEXT,
+	tags JSONB,
 	synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 ```

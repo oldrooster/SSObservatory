@@ -5,7 +5,7 @@ import logging
 from typing import Sequence
 
 import psycopg2
-from psycopg2.extras import execute_values
+from psycopg2.extras import Json, execute_values
 
 from .config import DatabaseConfig
 from .data_collector import EnterpriseAppRecord
@@ -41,11 +41,39 @@ class DatabaseClient:
             has_valid_certificate BOOLEAN,
             nearest_cert_expiry TIMESTAMPTZ,
             sampled_until TIMESTAMPTZ NOT NULL,
+            app_description TEXT,
+            app_owner_organization_id TEXT,
+            app_role_assignment_required BOOLEAN,
+            created_datetime TIMESTAMPTZ,
+            description TEXT,
+            homepage TEXT,
+            login_url TEXT,
+            notes TEXT,
+            notification_emails JSONB,
+            saml_sso_settings JSONB,
+            preferred_single_sign_on_mode TEXT,
+            tags JSONB,
             synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         """
         with self.conn.cursor() as cur:
             cur.execute(create_sql)
+            migrations = [
+                "ALTER TABLE enterprise_apps ADD COLUMN IF NOT EXISTS app_description TEXT",
+                "ALTER TABLE enterprise_apps ADD COLUMN IF NOT EXISTS app_owner_organization_id TEXT",
+                "ALTER TABLE enterprise_apps ADD COLUMN IF NOT EXISTS app_role_assignment_required BOOLEAN",
+                "ALTER TABLE enterprise_apps ADD COLUMN IF NOT EXISTS created_datetime TIMESTAMPTZ",
+                "ALTER TABLE enterprise_apps ADD COLUMN IF NOT EXISTS description TEXT",
+                "ALTER TABLE enterprise_apps ADD COLUMN IF NOT EXISTS homepage TEXT",
+                "ALTER TABLE enterprise_apps ADD COLUMN IF NOT EXISTS login_url TEXT",
+                "ALTER TABLE enterprise_apps ADD COLUMN IF NOT EXISTS notes TEXT",
+                "ALTER TABLE enterprise_apps ADD COLUMN IF NOT EXISTS notification_emails JSONB",
+                "ALTER TABLE enterprise_apps ADD COLUMN IF NOT EXISTS saml_sso_settings JSONB",
+                "ALTER TABLE enterprise_apps ADD COLUMN IF NOT EXISTS preferred_single_sign_on_mode TEXT",
+                "ALTER TABLE enterprise_apps ADD COLUMN IF NOT EXISTS tags JSONB",
+            ]
+            for statement in migrations:
+                cur.execute(statement)
 
     def upsert_apps(self, rows: Sequence[EnterpriseAppRecord]) -> None:
         if not rows:
@@ -59,7 +87,19 @@ class DatabaseClient:
             user_signins_last_30_days,
             has_valid_certificate,
             nearest_cert_expiry,
-            sampled_until
+            sampled_until,
+            app_description,
+            app_owner_organization_id,
+            app_role_assignment_required,
+            created_datetime,
+            description,
+            homepage,
+            login_url,
+            notes,
+            notification_emails,
+            saml_sso_settings,
+            preferred_single_sign_on_mode,
+            tags
         ) VALUES %s
         ON CONFLICT (app_object_id) DO UPDATE SET
             app_id = EXCLUDED.app_id,
@@ -69,6 +109,18 @@ class DatabaseClient:
             has_valid_certificate = EXCLUDED.has_valid_certificate,
             nearest_cert_expiry = EXCLUDED.nearest_cert_expiry,
             sampled_until = EXCLUDED.sampled_until,
+            app_description = EXCLUDED.app_description,
+            app_owner_organization_id = EXCLUDED.app_owner_organization_id,
+            app_role_assignment_required = EXCLUDED.app_role_assignment_required,
+            created_datetime = EXCLUDED.created_datetime,
+            description = EXCLUDED.description,
+            homepage = EXCLUDED.homepage,
+            login_url = EXCLUDED.login_url,
+            notes = EXCLUDED.notes,
+            notification_emails = EXCLUDED.notification_emails,
+            saml_sso_settings = EXCLUDED.saml_sso_settings,
+            preferred_single_sign_on_mode = EXCLUDED.preferred_single_sign_on_mode,
+            tags = EXCLUDED.tags,
             synced_at = NOW();
         """
         values = [
@@ -81,6 +133,18 @@ class DatabaseClient:
                 row.has_valid_certificate,
                 row.nearest_cert_expiry,
                 row.sampled_until,
+                row.app_description,
+                row.app_owner_organization_id,
+                row.app_role_assignment_required,
+                row.created_datetime,
+                row.description,
+                row.homepage,
+                row.login_url,
+                row.notes,
+                Json(row.notification_emails) if row.notification_emails is not None else None,
+                Json(row.saml_sso_settings) if row.saml_sso_settings is not None else None,
+                row.preferred_single_sign_on_mode,
+                Json(row.tags) if row.tags is not None else None,
             )
             for row in rows
         ]
